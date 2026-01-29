@@ -3,8 +3,5 @@ edge-tts==7.2.0
 pydub==0.25.1
 webvtt-py==0.4.5
 natsort==8.4.0
-phonemizer==3.2.1
-g2p-en==2.1.0
 numpy==2.0.2
 aiohttp==3.9.5
-asyncio
