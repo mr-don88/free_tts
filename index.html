@@ -193,35 +193,6 @@
             color: var(--primary-color);
         }
         
-        .voice-selector {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        
-        .voice-option {
-            flex: 1;
-            min-width: 150px;
-            padding: 10px;
-            border: 2px solid #ddd;
-            border-radius: var(--border-radius);
-            text-align: center;
-            cursor: pointer;
-            transition: var(--transition);
-        }
-        
-        .voice-option:hover {
-            border-color: var(--primary-color);
-            background: rgba(0, 123, 255, 0.05);
-        }
-        
-        .voice-option.selected {
-            border-color: var(--primary-color);
-            background: rgba(0, 123, 255, 0.1);
-            font-weight: 600;
-        }
-        
         .character-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -438,7 +409,7 @@
             color: var(--secondary-color);
         }
         
-        .voice-info {
+        .api-info {
             background: #e7f3ff;
             padding: 10px;
             border-radius: var(--border-radius);
@@ -447,23 +418,40 @@
             border-left: 4px solid var(--primary-color);
         }
         
-        .api-status {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
-            margin-left: 10px;
+        .tts-method {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
         }
         
-        .api-status.online {
-            background: #d4edda;
-            color: #155724;
+        .method-btn {
+            flex: 1;
+            padding: 10px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            transition: var(--transition);
         }
         
-        .api-status.offline {
-            background: #f8d7da;
-            color: #721c24;
+        .method-btn:hover {
+            background: #e9ecef;
+        }
+        
+        .method-btn.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 10px;
+            border-radius: var(--border-radius);
+            margin: 10px 0;
+            font-size: 14px;
         }
     </style>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -479,10 +467,10 @@
     <div class="container">
         <header>
             <h1><i class="fas fa-microphone-alt"></i> Advanced TTS with Multi-Character Dialogue</h1>
-            <p>Generate high-quality speech using Egg TTS API</p>
-            <div class="voice-info">
-                <i class="fas fa-server"></i> Using Egg TTS API - No activation needed
-                <span class="api-status online" id="api-status">Online</span>
+            <p>Generate high-quality speech using multiple TTS methods</p>
+            <div class="api-info">
+                <i class="fas fa-info-circle"></i> 
+                <strong>Browser Speech Synthesis</strong> - Works immediately, no API needed
             </div>
         </header>
         
@@ -529,10 +517,35 @@ The price is $99.99 and the temperature is 75°F today.
                                     <input type="range" id="standard-pitch" min="0.5" max="2.0" value="1.0" step="0.1">
                                 </div>
                             </div>
+                            
+                            <div class="form-group">
+                                <label>Volume: <span id="standard-volume-value" class="range-value">1.0</span></label>
+                                <div class="range-container">
+                                    <input type="range" id="standard-volume" min="0" max="1" value="1.0" step="0.1">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="tts-method">
+                            <button class="method-btn active" data-method="browser">
+                                <i class="fas fa-window-restore"></i> Browser TTS
+                            </button>
+                            <button class="method-btn" data-method="elevenlabs">
+                                <i class="fas fa-cloud"></i> ElevenLabs (API)
+                            </button>
+                        </div>
+                        
+                        <div class="warning-box" id="api-warning" style="display: none;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            ElevenLabs API requires an API key. Using Browser TTS for now.
                         </div>
                         
                         <button class="btn-primary" id="generate-standard">
-                            <i class="fas fa-play"></i> Generate Audio
+                            <i class="fas fa-play"></i> Generate & Speak
+                        </button>
+                        
+                        <button class="btn-secondary" id="stop-standard" style="margin-left: 10px;">
+                            <i class="fas fa-stop"></i> Stop
                         </button>
                     </div>
                     
@@ -542,13 +555,13 @@ The price is $99.99 and the temperature is 75°F today.
                             <div class="audio-container">
                                 <div class="audio-placeholder" id="standard-audio-placeholder">
                                     <i class="fas fa-headphones"></i>
-                                    <p>Audio will appear here after generation</p>
-                                    <small>Click "Generate Audio" to create TTS</small>
+                                    <p>Audio will play directly in your browser</p>
+                                    <small>Click "Generate & Speak" to hear the speech</small>
                                 </div>
                                 <audio controls class="audio-player" id="standard-audio" style="display: none;"></audio>
                                 
                                 <div class="progress-container" style="display: none;" id="standard-progress-container">
-                                    <div>Generating audio... <span id="standard-progress-text">0%</span></div>
+                                    <div>Speaking... <span id="standard-progress-text">0%</span></div>
                                     <div class="progress-bar">
                                         <div class="progress-fill" id="standard-progress-fill"></div>
                                     </div>
@@ -565,7 +578,7 @@ The price is $99.99 and the temperature is 75°F today.
                                 <i class="fas fa-download"></i> Download SRT
                             </button>
                             <button class="btn-secondary download-btn" id="download-standard-audio" style="margin-left: 10px; display: none;">
-                                <i class="fas fa-download"></i> Download Audio
+                                <i class="fas fa-download"></i> Record Audio
                             </button>
                         </div>
                     </div>
@@ -626,10 +639,19 @@ A: Visit our website at https://www.company.com
                                 <label>Repeat Times: <span id="qa-repeat-value" class="range-value">1</span></label>
                                 <input type="range" id="qa-repeat" min="1" max="5" value="1" step="1">
                             </div>
+                            
+                            <div class="form-group">
+                                <label>Pause between Q&A (ms): <span id="qa-pause-value" class="range-value">500</span></label>
+                                <input type="range" id="qa-pause" min="100" max="2000" value="500" step="100">
+                            </div>
                         </div>
                         
                         <button class="btn-primary" id="generate-qa">
-                            <i class="fas fa-play"></i> Generate Q&A Audio
+                            <i class="fas fa-play"></i> Generate & Speak Q&A
+                        </button>
+                        
+                        <button class="btn-secondary" id="stop-qa" style="margin-left: 10px;">
+                            <i class="fas fa-stop"></i> Stop
                         </button>
                     </div>
                     
@@ -639,13 +661,13 @@ A: Visit our website at https://www.company.com
                             <div class="audio-container">
                                 <div class="audio-placeholder" id="qa-audio-placeholder">
                                     <i class="fas fa-headphones"></i>
-                                    <p>Audio will appear here after generation</p>
-                                    <small>Click "Generate Q&A Audio" to create TTS</small>
+                                    <p>Audio will play directly in your browser</p>
+                                    <small>Click "Generate & Speak Q&A" to hear the speech</small>
                                 </div>
                                 <audio controls class="audio-player" id="qa-audio" style="display: none;"></audio>
                                 
                                 <div class="progress-container" style="display: none;" id="qa-progress-container">
-                                    <div>Generating audio... <span id="qa-progress-text">0%</span></div>
+                                    <div>Speaking... <span id="qa-progress-text">0%</span></div>
                                     <div class="progress-bar">
                                         <div class="progress-fill" id="qa-progress-fill"></div>
                                     </div>
@@ -662,7 +684,7 @@ A: Visit our website at https://www.company.com
                                 <i class="fas fa-download"></i> Download SRT
                             </button>
                             <button class="btn-secondary download-btn" id="download-qa-audio" style="margin-left: 10px; display: none;">
-                                <i class="fas fa-download"></i> Download Audio
+                                <i class="fas fa-download"></i> Record Audio
                             </button>
                         </div>
                     </div>
@@ -758,7 +780,11 @@ CHAR4: The price is $1,234.56
                         </div>
                         
                         <button class="btn-primary" id="generate-multichar">
-                            <i class="fas fa-play"></i> Generate Multi-Character Audio
+                            <i class="fas fa-play"></i> Generate & Speak Multi-Character
+                        </button>
+                        
+                        <button class="btn-secondary" id="stop-multichar" style="margin-left: 10px;">
+                            <i class="fas fa-stop"></i> Stop
                         </button>
                     </div>
                     
@@ -768,13 +794,13 @@ CHAR4: The price is $1,234.56
                             <div class="audio-container">
                                 <div class="audio-placeholder" id="multichar-audio-placeholder">
                                     <i class="fas fa-headphones"></i>
-                                    <p>Audio will appear here after generation</p>
-                                    <small>Click "Generate Multi-Character Audio" to create TTS</small>
+                                    <p>Audio will play directly in your browser</p>
+                                    <small>Click "Generate & Speak Multi-Character" to hear the speech</small>
                                 </div>
                                 <audio controls class="audio-player" id="multichar-audio" style="display: none;"></audio>
                                 
                                 <div class="progress-container" style="display: none;" id="multichar-progress-container">
-                                    <div>Generating audio... <span id="multichar-progress-text">0%</span></div>
+                                    <div>Speaking... <span id="multichar-progress-text">0%</span></div>
                                     <div class="progress-bar">
                                         <div class="progress-fill" id="multichar-progress-fill"></div>
                                     </div>
@@ -791,7 +817,7 @@ CHAR4: The price is $1,234.56
                                 <i class="fas fa-download"></i> Download SRT
                             </button>
                             <button class="btn-secondary download-btn" id="download-multichar-audio" style="margin-left: 10px; display: none;">
-                                <i class="fas fa-download"></i> Download Audio
+                                <i class="fas fa-download"></i> Record Audio
                             </button>
                         </div>
                     </div>
@@ -820,83 +846,21 @@ CHAR2: I'm fine, thanks!
     </div>
     
     <div class="status-bar">
-        <div id="status-text">Ready - Using Egg TTS API (No activation needed)</div>
-        <div id="device-info">Egg TTS API</div>
+        <div id="status-text">Ready - Using Browser Speech Synthesis</div>
+        <div id="device-info">No API key required</div>
     </div>
 
     <script>
-        // Egg TTS API Configuration
-        const EGG_TTS_API = "https://eggyolk.cf/tts";
-        
-        // Available voices in Egg TTS
-        const EGG_VOICES = [
-            { id: "af_heart", name: "Heart (Afrikaans)", language: "af" },
-            { id: "af_sarah", name: "Sarah (Afrikaans)", language: "af" },
-            { id: "am_michael", name: "Michael (Amharic)", language: "am" },
-            { id: "ar_mehdi", name: "Mehdi (Arabic)", language: "ar" },
-            { id: "az_banu", name: "Banu (Azerbaijani)", language: "az" },
-            { id: "bg_dimo", name: "Dimo (Bulgarian)", language: "bg" },
-            { id: "bn_nabanita", name: "Nabanita (Bengali)", language: "bn" },
-            { id: "bs_merjem", name: "Merjem (Bosnian)", language: "bs" },
-            { id: "ca_ona", name: "Ona (Catalan)", language: "ca" },
-            { id: "cs_jakub", name: "Jakub (Czech)", language: "cs" },
-            { id: "cy_gwyneth", name: "Gwyneth (Welsh)", language: "cy" },
-            { id: "da_magnus", name: "Magnus (Danish)", language: "da" },
-            { id: "de_elena", name: "Elena (German)", language: "de" },
-            { id: "el_nikos", name: "Nikos (Greek)", language: "el" },
-            { id: "en_amy", name: "Amy (English)", language: "en" },
-            { id: "en_aria", name: "Aria (English)", language: "en" },
-            { id: "en_emma", name: "Emma (English)", language: "en" },
-            { id: "en_ethan", name: "Ethan (English)", language: "en" },
-            { id: "en_grace", name: "Grace (English)", language: "en" },
-            { id: "en_liam", name: "Liam (English)", language: "en" },
-            { id: "en_sam", name: "Sam (English)", language: "en" },
-            { id: "es_elvira", name: "Elvira (Spanish)", language: "es" },
-            { id: "fa_darya", name: "Darya (Persian)", language: "fa" },
-            { id: "fi_selma", name: "Selma (Finnish)", language: "fi" },
-            { id: "fr_aline", name: "Aline (French)", language: "fr" },
-            { id: "he_avri", name: "Avri (Hebrew)", language: "he" },
-            { id: "hi_madhur", name: "Madhur (Hindi)", language: "hi" },
-            { id: "hr_lana", name: "Lana (Croatian)", language: "hr" },
-            { id: "hu_tamas", name: "Tamas (Hungarian)", language: "hu" },
-            { id: "id_ardi", name: "Ardi (Indonesian)", language: "id" },
-            { id: "it_adriano", name: "Adriano (Italian)", language: "it" },
-            { id: "ja_naoki", name: "Naoki (Japanese)", language: "ja" },
-            { id: "ko_hyun", name: "Hyun (Korean)", language: "ko" },
-            { id: "lt_leonas", name: "Leonas (Lithuanian)", language: "lt" },
-            { id: "lv_everita", name: "Everita (Latvian)", language: "lv" },
-            { id: "mk_aleksandar", name: "Aleksandar (Macedonian)", language: "mk" },
-            { id: "ms_aiman", name: "Aiman (Malay)", language: "ms" },
-            { id: "nb_liv", name: "Liv (Norwegian)", language: "nb" },
-            { id: "nl_colette", name: "Colette (Dutch)", language: "nl" },
-            { id: "pl_mateusz", name: "Mateusz (Polish)", language: "pl" },
-            { id: "pt_alberto", name: "Alberto (Portuguese)", language: "pt" },
-            { id: "ro_doru", name: "Doru (Romanian)", language: "ro" },
-            { id: "ru_dmitry", name: "Dmitry (Russian)", language: "ru" },
-            { id: "sk_lukas", name: "Lukas (Slovak)", language: "sk" },
-            { id: "sl_rok", name: "Rok (Slovenian)", language: "sl" },
-            { id: "sr_nikola", name: "Nikola (Serbian)", language: "sr" },
-            { id: "sv_emelie", name: "Emelie (Swedish)", language: "sv" },
-            { id: "sw_rafiki", name: "Rafiki (Swahili)", language: "sw" },
-            { id: "ta_kavi", name: "Kavi (Tamil)", language: "ta" },
-            { id: "th_somchai", name: "Somchai (Thai)", language: "th" },
-            { id: "tr_ahmet", name: "Ahmet (Turkish)", language: "tr" },
-            { id: "uk_oleksandr", name: "Oleksandr (Ukrainian)", language: "uk" },
-            { id: "ur_salman", name: "Salman (Urdu)", language: "ur" },
-            { id: "vi_linh", name: "Linh (Vietnamese)", language: "vi" },
-            { id: "zh_li", name: "Li (Chinese)", language: "zh" }
-        ];
-        
-        // State management
-        let currentAudioBlobs = {
-            standard: null,
-            qa: null,
-            multichar: null
-        };
+        // Speech Synthesis Setup
+        let speechSynthesis = window.speechSynthesis;
+        let voices = [];
+        let currentUtterances = [];
+        let isSpeaking = false;
+        let ttsMethod = 'browser'; // 'browser' or 'elevenlabs'
         
         // Initialize the application
         function init() {
-            console.log("Initializing TTS Application with Egg TTS API...");
+            console.log("Initializing TTS Application...");
             
             // Setup tab switching
             setupTabs();
@@ -910,10 +874,13 @@ CHAR2: I'm fine, thanks!
             // Setup event listeners
             setupEventListeners();
             
-            // Test API connection
-            testAPIConnection();
+            // Load voices
+            loadVoices();
             
-            updateStatus("Ready - Using Egg TTS API");
+            // Check browser support
+            checkBrowserSupport();
+            
+            updateStatus("Ready - Using Browser Speech Synthesis");
         }
         
         function setupTabs() {
@@ -939,11 +906,13 @@ CHAR2: I'm fine, thanks!
             // Standard mode
             updateRangeValue('standard-speed', 'standard-speed-value');
             updateRangeValue('standard-pitch', 'standard-pitch-value');
+            updateRangeValue('standard-volume', 'standard-volume-value');
             
             // Q&A mode
             updateRangeValue('qa-speed-q', 'qa-speed-q-value');
             updateRangeValue('qa-speed-a', 'qa-speed-a-value');
             updateRangeValue('qa-repeat', 'qa-repeat-value');
+            updateRangeValue('qa-pause', 'qa-pause-value');
             
             // Multi-character mode
             updateRangeValue('char1-speed', 'char1-speed-value');
@@ -971,48 +940,75 @@ CHAR2: I'm fine, thanks!
         }
         
         function setupVoiceSelectors() {
-            // Filter English voices by default
-            const englishVoices = EGG_VOICES.filter(voice => voice.language === 'en');
+            console.log("Setting up voice selectors...");
             
-            // Populate all voice selectors
-            populateVoiceDropdown('standard-voice', englishVoices);
-            populateVoiceDropdown('qa-voice-q', englishVoices);
-            populateVoiceDropdown('qa-voice-a', englishVoices);
-            populateVoiceDropdown('char1-voice', englishVoices);
-            populateVoiceDropdown('char2-voice', englishVoices);
-            populateVoiceDropdown('char3-voice', englishVoices);
-            populateVoiceDropdown('char4-voice', englishVoices);
+            // Set up voice loaded event
+            speechSynthesis.onvoiceschanged = loadVoices;
             
-            showNotification(`Loaded ${EGG_VOICES.length} voices from Egg TTS`, 'success');
+            // Also try to load immediately
+            setTimeout(loadVoices, 1000);
         }
         
-        function populateVoiceDropdown(dropdownId, voices) {
+        function loadVoices() {
+            voices = speechSynthesis.getVoices();
+            console.log(`Loaded ${voices.length} browser voices`);
+            
+            if (voices.length === 0) {
+                console.log("No voices available yet, retrying...");
+                setTimeout(loadVoices, 1000);
+                return;
+            }
+            
+            // Populate all voice selectors
+            populateVoiceDropdown('standard-voice');
+            populateVoiceDropdown('qa-voice-q');
+            populateVoiceDropdown('qa-voice-a');
+            populateVoiceDropdown('char1-voice');
+            populateVoiceDropdown('char2-voice');
+            populateVoiceDropdown('char3-voice');
+            populateVoiceDropdown('char4-voice');
+            
+            showNotification(`Loaded ${voices.length} browser voices`, 'success');
+        }
+        
+        function populateVoiceDropdown(dropdownId) {
             const dropdown = document.getElementById(dropdownId);
             dropdown.innerHTML = '';
             
-            // Add option groups by language
-            const languages = [...new Set(voices.map(v => v.language))];
+            // Group voices by language
+            const voiceGroups = {};
             
-            languages.forEach(language => {
-                const langVoices = voices.filter(v => v.language === language);
+            voices.forEach(voice => {
+                const lang = voice.lang.substring(0, 2);
+                if (!voiceGroups[lang]) {
+                    voiceGroups[lang] = [];
+                }
+                voiceGroups[lang].push(voice);
+            });
+            
+            // Add "Auto" option first
+            const autoOption = document.createElement('option');
+            autoOption.value = 'auto';
+            autoOption.textContent = 'Auto (System Default)';
+            dropdown.appendChild(autoOption);
+            
+            // Add voices by language group
+            Object.keys(voiceGroups).sort().forEach(lang => {
                 const optgroup = document.createElement('optgroup');
-                optgroup.label = language.toUpperCase();
+                optgroup.label = lang.toUpperCase();
                 
-                langVoices.forEach(voice => {
+                voiceGroups[lang].forEach(voice => {
                     const option = document.createElement('option');
-                    option.value = voice.id;
-                    option.textContent = voice.name;
+                    option.value = voice.voiceURI;
+                    option.textContent = `${voice.name} (${voice.lang})`;
                     optgroup.appendChild(option);
                 });
                 
                 dropdown.appendChild(optgroup);
             });
             
-            // Select first English voice by default
-            const firstEnglishVoice = voices.find(v => v.language === 'en');
-            if (firstEnglishVoice) {
-                dropdown.value = firstEnglishVoice.id;
-            }
+            // Select auto by default
+            dropdown.value = 'auto';
         }
         
         function setupEventListeners() {
@@ -1021,15 +1017,47 @@ CHAR2: I'm fine, thanks!
             document.getElementById('generate-qa').addEventListener('click', () => generateAudio('qa'));
             document.getElementById('generate-multichar').addEventListener('click', () => generateAudio('multichar'));
             
+            // Stop buttons
+            document.getElementById('stop-standard').addEventListener('click', stopAllSpeech);
+            document.getElementById('stop-qa').addEventListener('click', stopAllSpeech);
+            document.getElementById('stop-multichar').addEventListener('click', stopAllSpeech);
+            
             // Download buttons
             document.getElementById('download-standard-srt').addEventListener('click', () => downloadSRT('standard'));
             document.getElementById('download-qa-srt').addEventListener('click', () => downloadSRT('qa'));
             document.getElementById('download-multichar-srt').addEventListener('click', () => downloadSRT('multichar'));
             
-            // Audio download buttons
-            document.getElementById('download-standard-audio').addEventListener('click', () => downloadAudio('standard'));
-            document.getElementById('download-qa-audio').addEventListener('click', () => downloadAudio('qa'));
-            document.getElementById('download-multichar-audio').addEventListener('click', () => downloadAudio('multichar'));
+            // TTS method buttons
+            document.querySelectorAll('.method-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    ttsMethod = this.dataset.method;
+                    
+                    const warningBox = document.getElementById('api-warning');
+                    if (ttsMethod === 'elevenlabs') {
+                        warningBox.style.display = 'block';
+                    } else {
+                        warningBox.style.display = 'none';
+                    }
+                    
+                    updateStatus(`Using ${ttsMethod === 'browser' ? 'Browser Speech Synthesis' : 'ElevenLabs API'}`);
+                });
+            });
+        }
+        
+        function checkBrowserSupport() {
+            if (!('speechSynthesis' in window)) {
+                showNotification('Speech synthesis is not supported in this browser', 'error');
+                document.getElementById('generate-standard').disabled = true;
+                document.getElementById('generate-qa').disabled = true;
+                document.getElementById('generate-multichar').disabled = true;
+                updateStatus("Speech synthesis not supported");
+                return false;
+            }
+            
+            console.log("Speech synthesis is supported");
+            return true;
         }
         
         function updateStatus(message) {
@@ -1060,16 +1088,6 @@ CHAR2: I'm fine, thanks!
             }
         }
         
-        function updateProgress(mode, progress) {
-            const progressFill = document.getElementById(`${mode}-progress-fill`);
-            const progressText = document.getElementById(`${mode}-progress-text`);
-            
-            if (progressFill && progressText) {
-                progressFill.style.width = `${progress}%`;
-                progressText.textContent = `${Math.floor(progress)}%`;
-            }
-        }
-        
         function showProgress(mode, show) {
             const placeholder = document.getElementById(`${mode}-audio-placeholder`);
             const audioElement = document.getElementById(`${mode}-audio`);
@@ -1084,34 +1102,22 @@ CHAR2: I'm fine, thanks!
             }
         }
         
-        function showAudioPlayer(mode, audioUrl) {
-            const placeholder = document.getElementById(`${mode}-audio-placeholder`);
-            const audioElement = document.getElementById(`${mode}-audio`);
-            const downloadBtn = document.getElementById(`download-${mode}-audio`);
+        function updateProgress(mode, progress) {
+            const progressFill = document.getElementById(`${mode}-progress-fill`);
+            const progressText = document.getElementById(`${mode}-progress-text`);
             
-            placeholder.style.display = 'none';
-            audioElement.src = audioUrl;
-            audioElement.style.display = 'block';
-            downloadBtn.style.display = 'inline-block';
+            if (progressFill && progressText) {
+                progressFill.style.width = `${progress}%`;
+                progressText.textContent = `${Math.floor(progress)}%`;
+            }
         }
         
-        async function testAPIConnection() {
-            try {
-                const response = await fetch(`${EGG_TTS_API}/voices`);
-                if (response.ok) {
-                    document.getElementById('api-status').textContent = 'Online';
-                    document.getElementById('api-status').className = 'api-status online';
-                    updateStatus("Egg TTS API is online and ready");
-                    return true;
-                }
-            } catch (error) {
-                console.log("API test failed, but we can still try to use it");
-            }
+        function showAudioPlayer(mode) {
+            const placeholder = document.getElementById(`${mode}-audio-placeholder`);
+            const audioElement = document.getElementById(`${mode}-audio`);
             
-            document.getElementById('api-status').textContent = 'Limited';
-            document.getElementById('api-status').className = 'api-status offline';
-            updateStatus("Egg TTS API may be limited - using fallback");
-            return false;
+            placeholder.style.display = 'none';
+            audioElement.style.display = 'block';
         }
         
         // Text processing functions
@@ -1144,8 +1150,9 @@ CHAR2: I'm fine, thanks!
         function convertNumberToWords(num) {
             num = parseFloat(num);
             if (isNaN(num)) return num.toString();
+            if (num === 0) return 'zero';
             
-            const ones = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+            const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
             const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
             const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
             
@@ -1187,8 +1194,21 @@ CHAR2: I'm fine, thanks!
             return dialogues;
         }
         
+        function getVoiceFromSelect(selectId) {
+            const select = document.getElementById(selectId);
+            const selectedValue = select.value;
+            
+            if (selectedValue === 'auto') {
+                // Return default voice
+                return voices.find(v => v.default) || voices[0];
+            }
+            
+            // Find voice by URI
+            return voices.find(v => v.voiceURI === selectedValue) || voices[0];
+        }
+        
         async function generateAudio(mode) {
-            // Get text and settings based on mode
+            // Get text based on mode
             let text = '';
             let settings = {};
             let dialogues = [];
@@ -1200,9 +1220,10 @@ CHAR2: I'm fine, thanks!
                     return;
                 }
                 
-                settings.voice = document.getElementById('standard-voice').value;
+                settings.voice = getVoiceFromSelect('standard-voice');
                 settings.speed = parseFloat(document.getElementById('standard-speed').value);
                 settings.pitch = parseFloat(document.getElementById('standard-pitch').value);
+                settings.volume = parseFloat(document.getElementById('standard-volume').value);
                 
             } else if (mode === 'qa') {
                 text = document.getElementById('qa-text').value.trim();
@@ -1217,11 +1238,12 @@ CHAR2: I'm fine, thanks!
                     return;
                 }
                 
-                settings.voiceQ = document.getElementById('qa-voice-q').value;
-                settings.voiceA = document.getElementById('qa-voice-a').value;
+                settings.voiceQ = getVoiceFromSelect('qa-voice-q');
+                settings.voiceA = getVoiceFromSelect('qa-voice-a');
                 settings.speedQ = parseFloat(document.getElementById('qa-speed-q').value);
                 settings.speedA = parseFloat(document.getElementById('qa-speed-a').value);
                 settings.repeat = parseInt(document.getElementById('qa-repeat').value);
+                settings.pause = parseInt(document.getElementById('qa-pause').value);
                 
             } else if (mode === 'multichar') {
                 text = document.getElementById('multichar-text').value.trim();
@@ -1248,50 +1270,28 @@ CHAR2: I'm fine, thanks!
                 settings.charSettings = {};
                 charNames.forEach((charName, index) => {
                     settings.charSettings[charName] = {
-                        voice: document.getElementById(`char${index + 1}-voice`).value,
+                        voice: getVoiceFromSelect(`char${index + 1}-voice`),
                         speed: parseFloat(document.getElementById(`char${index + 1}-speed`).value)
                     };
                 });
             }
             
+            // Stop any current speech
+            stopAllSpeech();
+            
             // Show loading and progress
-            showLoading(true, `Generating ${mode} audio with Egg TTS...`);
+            showLoading(true, `Generating ${mode} audio...`);
             showProgress(mode, true);
             updateProgress(mode, 0);
             
             try {
-                let audioBlob;
-                
-                if (mode === 'standard') {
-                    audioBlob = await generateStandardTTS(text, settings);
-                } else if (mode === 'qa') {
-                    audioBlob = await generateQATTS(dialogues, settings);
-                } else if (mode === 'multichar') {
-                    audioBlob = await generateMultiCharTTS(dialogues, settings);
-                }
-                
-                if (audioBlob) {
-                    // Create audio URL
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    
-                    // Store blob for download
-                    currentAudioBlobs[mode] = audioBlob;
-                    
-                    // Update UI
-                    showAudioPlayer(mode, audioUrl);
-                    generateStatsAndSubtitles(mode, text, settings, dialogues);
-                    
-                    showNotification(`${mode} audio generated successfully`, 'success');
-                    updateStatus(`${mode} audio ready to play`);
-                    
-                    // Auto-play the audio
-                    setTimeout(() => {
-                        document.getElementById(`${mode}-audio`).play().catch(e => {
-                            console.log("Auto-play blocked, user can click play");
-                        });
-                    }, 500);
+                if (ttsMethod === 'browser') {
+                    // Use browser speech synthesis
+                    await generateBrowserTTS(mode, text, settings, dialogues);
                 } else {
-                    throw new Error('Failed to generate audio');
+                    // For ElevenLabs, fall back to browser TTS since we don't have API key
+                    showNotification('Using Browser TTS (ElevenLabs requires API key)', 'info');
+                    await generateBrowserTTS(mode, text, settings, dialogues);
                 }
                 
             } catch (error) {
@@ -1300,11 +1300,9 @@ CHAR2: I'm fine, thanks!
                 
                 // Reset UI
                 const placeholder = document.getElementById(`${mode}-audio-placeholder`);
-                const audioElement = document.getElementById(`${mode}-audio`);
                 const progressContainer = document.getElementById(`${mode}-progress-container`);
                 
                 placeholder.style.display = 'block';
-                audioElement.style.display = 'none';
                 progressContainer.style.display = 'none';
                 
             } finally {
@@ -1312,232 +1310,267 @@ CHAR2: I'm fine, thanks!
             }
         }
         
-        async function generateStandardTTS(text, settings) {
-            const processedText = processText(text);
-            
-            // Update progress
-            updateProgress('standard', 30);
-            
-            // Call Egg TTS API
-            const audioBlob = await callEggTTSAPI(processedText, settings.voice, settings.speed);
-            
-            // Update progress
-            updateProgress('standard', 100);
-            
-            return audioBlob;
+        async function generateBrowserTTS(mode, text, settings, dialogues) {
+            return new Promise((resolve) => {
+                currentUtterances = [];
+                isSpeaking = true;
+                
+                if (mode === 'standard') {
+                    generateStandardSpeech(mode, text, settings);
+                } else if (mode === 'qa') {
+                    generateQASpeech(mode, dialogues, settings);
+                } else if (mode === 'multichar') {
+                    generateMultiCharSpeech(mode, dialogues, settings);
+                }
+                
+                // Resolve after a short delay to allow speech to start
+                setTimeout(resolve, 100);
+            });
         }
         
-        async function generateQATTS(dialogues, settings) {
-            const audioChunks = [];
+        function generateStandardSpeech(mode, text, settings) {
+            const processedText = processText(text);
+            const utterance = new SpeechSynthesisUtterance(processedText);
+            
+            // Configure utterance
+            utterance.voice = settings.voice;
+            utterance.rate = settings.speed;
+            utterance.pitch = settings.pitch;
+            utterance.volume = settings.volume;
+            
+            // Track progress
+            const startTime = Date.now();
+            const estimatedDuration = (processedText.length / 15) * 1000;
+            
+            const progressInterval = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(99, (elapsed / estimatedDuration) * 100);
+                updateProgress(mode, progress);
+            }, 100);
+            
+            // Event handlers
+            utterance.onstart = () => {
+                updateStatus(`Speaking: ${text.length} characters`);
+                showAudioPlayer(mode);
+            };
+            
+            utterance.onend = () => {
+                clearInterval(progressInterval);
+                updateProgress(mode, 100);
+                setTimeout(() => {
+                    showProgress(mode, false);
+                    generateStatsAndSubtitles(mode, text, settings, []);
+                    showNotification('Speech completed successfully', 'success');
+                    updateStatus('Speech completed');
+                    isSpeaking = false;
+                }, 500);
+            };
+            
+            utterance.onerror = (event) => {
+                clearInterval(progressInterval);
+                console.error("Speech error:", event);
+                showProgress(mode, false);
+                showNotification('Error in speech synthesis', 'error');
+                updateStatus('Speech error');
+                isSpeaking = false;
+            };
+            
+            // Store utterance
+            currentUtterances.push(utterance);
+            
+            // Speak
+            speechSynthesis.speak(utterance);
+        }
+        
+        function generateQASpeech(mode, dialogues, settings) {
             const totalParts = dialogues.length * settings.repeat;
             let completedParts = 0;
             
-            for (let r = 0; r < settings.repeat; r++) {
-                for (let i = 0; i < dialogues.length; i++) {
-                    const dialogue = dialogues[i];
-                    const isQuestion = dialogue.speaker === 'Q';
-                    const processedText = processText(dialogue.content);
-                    
-                    // Update progress
-                    const progress = (completedParts / totalParts) * 100;
-                    updateProgress('qa', progress);
-                    
-                    // Call Egg TTS API
-                    const voice = isQuestion ? settings.voiceQ : settings.voiceA;
-                    const speed = isQuestion ? settings.speedQ : settings.speedA;
-                    const audioBlob = await callEggTTSAPI(processedText, voice, speed);
-                    
-                    audioChunks.push(audioBlob);
-                    completedParts++;
+            function speakNext() {
+                if (!isSpeaking || completedParts >= totalParts) {
+                    if (completedParts >= totalParts) {
+                        updateProgress(mode, 100);
+                        setTimeout(() => {
+                            showProgress(mode, false);
+                            generateStatsAndSubtitles(mode, '', settings, dialogues);
+                            showNotification('Q&A speech completed', 'success');
+                            updateStatus('Q&A completed');
+                            isSpeaking = false;
+                        }, 500);
+                    }
+                    return;
                 }
+                
+                const dialogueIndex = completedParts % dialogues.length;
+                const dialogue = dialogues[dialogueIndex];
+                const isQuestion = dialogue.speaker === 'Q';
+                
+                const processedText = processText(dialogue.content);
+                const utterance = new SpeechSynthesisUtterance(processedText);
+                
+                // Configure utterance
+                utterance.voice = isQuestion ? settings.voiceQ : settings.voiceA;
+                utterance.rate = isQuestion ? settings.speedQ : settings.speedA;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                
+                // Update progress
+                const progress = (completedParts / totalParts) * 100;
+                updateProgress(mode, progress);
+                
+                utterance.onend = () => {
+                    completedParts++;
+                    
+                    if (completedParts < totalParts) {
+                        // Pause between utterances
+                        setTimeout(speakNext, settings.pause);
+                    } else {
+                        speakNext();
+                    }
+                };
+                
+                utterance.onerror = () => {
+                    completedParts++;
+                    
+                    if (completedParts < totalParts) {
+                        setTimeout(speakNext, settings.pause);
+                    } else {
+                        speakNext();
+                    }
+                };
+                
+                // Store utterance
+                currentUtterances.push(utterance);
+                
+                // Speak
+                if (completedParts === 0) {
+                    showAudioPlayer(mode);
+                    updateStatus(`Speaking Q&A: ${totalParts} parts`);
+                }
+                
+                speechSynthesis.speak(utterance);
             }
             
-            // Update progress
-            updateProgress('qa', 100);
-            
-            // Combine audio chunks (simplified - in real implementation would use AudioContext)
-            return audioChunks[0]; // Return first chunk for simplicity
+            // Start speaking
+            speakNext();
         }
         
-        async function generateMultiCharTTS(dialogues, settings) {
-            const audioChunks = [];
+        function generateMultiCharSpeech(mode, dialogues, settings) {
+            let completedDialogues = 0;
             const totalDialogues = dialogues.length;
             
-            for (let i = 0; i < dialogues.length; i++) {
-                const dialogue = dialogues[i];
+            function speakNext() {
+                if (!isSpeaking || completedDialogues >= totalDialogues) {
+                    if (completedDialogues >= totalDialogues) {
+                        updateProgress(mode, 100);
+                        setTimeout(() => {
+                            showProgress(mode, false);
+                            generateStatsAndSubtitles(mode, '', settings, dialogues);
+                            showNotification('Multi-character speech completed', 'success');
+                            updateStatus('Dialogue completed');
+                            isSpeaking = false;
+                        }, 500);
+                    }
+                    return;
+                }
+                
+                const dialogue = dialogues[completedDialogues];
                 const charSettings = settings.charSettings[dialogue.speaker];
                 
                 if (!charSettings) {
-                    continue;
+                    completedDialogues++;
+                    speakNext();
+                    return;
                 }
-                
-                // Update progress
-                const progress = (i / totalDialogues) * 100;
-                updateProgress('multichar', progress);
                 
                 const processedText = processText(dialogue.content);
+                const utterance = new SpeechSynthesisUtterance(processedText);
                 
-                // Call Egg TTS API
-                const audioBlob = await callEggTTSAPI(processedText, charSettings.voice, charSettings.speed);
-                audioChunks.push(audioBlob);
-            }
-            
-            // Update progress
-            updateProgress('multichar', 100);
-            
-            // Return first chunk for simplicity
-            return audioChunks[0];
-        }
-        
-        async function callEggTTSAPI(text, voice, speed) {
-            try {
-                // Prepare request parameters
-                const params = new URLSearchParams({
-                    text: text,
-                    voice: voice,
-                    speed: speed.toString(),
-                    format: 'mp3'
-                });
+                // Configure utterance
+                utterance.voice = charSettings.voice;
+                utterance.rate = charSettings.speed;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
                 
-                const url = `${EGG_TTS_API}?${params.toString()}`;
+                // Update progress
+                const progress = (completedDialogues / totalDialogues) * 100;
+                updateProgress(mode, progress);
                 
-                console.log(`Calling Egg TTS API: ${url.substring(0, 100)}...`);
+                utterance.onend = () => {
+                    completedDialogues++;
+                    setTimeout(speakNext, 300); // Small pause between characters
+                };
                 
-                // Fetch audio
-                const response = await fetch(url);
+                utterance.onerror = () => {
+                    completedDialogues++;
+                    setTimeout(speakNext, 300);
+                };
                 
-                if (!response.ok) {
-                    throw new Error(`API returned ${response.status}: ${response.statusText}`);
+                // Store utterance
+                currentUtterances.push(utterance);
+                
+                // Speak
+                if (completedDialogues === 0) {
+                    showAudioPlayer(mode);
+                    updateStatus(`Speaking dialogue: ${totalDialogues} lines`);
                 }
                 
-                // Get audio blob
-                const audioBlob = await response.blob();
-                
-                if (audioBlob.size === 0) {
-                    throw new Error('Empty audio response from API');
+                speechSynthesis.speak(utterance);
+            }
+            
+            // Start speaking
+            speakNext();
+        }
+        
+        function stopAllSpeech() {
+            speechSynthesis.cancel();
+            currentUtterances = [];
+            isSpeaking = false;
+            
+            // Hide progress bars
+            ['standard', 'qa', 'multichar'].forEach(mode => {
+                const progressContainer = document.getElementById(`${mode}-progress-container`);
+                if (progressContainer) {
+                    progressContainer.style.display = 'none';
                 }
-                
-                console.log(`Received audio blob: ${audioBlob.size} bytes`);
-                return audioBlob;
-                
-            } catch (error) {
-                console.error('Egg TTS API error:', error);
-                
-                // Fallback: Generate a simple audio tone
-                return generateFallbackAudio(text);
-            }
+            });
+            
+            updateStatus('Speech stopped');
+            showNotification('Speech stopped', 'info');
         }
         
-        function generateFallbackAudio(text) {
-            // Fallback audio generation using Web Audio API
-            try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const duration = Math.max(1, text.length / 15);
-                const sampleRate = audioContext.sampleRate;
-                const numSamples = duration * sampleRate;
-                
-                // Create buffer
-                const buffer = audioContext.createBuffer(1, numSamples, sampleRate);
-                const data = buffer.getChannelData(0);
-                
-                // Generate simple tone
-                const frequency = 220; // A3 note
-                for (let i = 0; i < numSamples; i++) {
-                    data[i] = Math.sin(2 * Math.PI * frequency * i / sampleRate) * 0.1;
-                }
-                
-                // Convert to WAV blob
-                return bufferToWavBlob(buffer);
-                
-            } catch (error) {
-                console.error('Fallback audio generation failed:', error);
-                throw new Error('Could not generate audio');
-            }
-        }
-        
-        function bufferToWavBlob(buffer) {
-            const numChannels = buffer.numberOfChannels;
-            const sampleRate = buffer.sampleRate;
-            const format = 1; // PCM
-            const bitDepth = 16;
-            
-            const bytesPerSample = bitDepth / 8;
-            const blockAlign = numChannels * bytesPerSample;
-            const byteRate = sampleRate * blockAlign;
-            const dataSize = buffer.length * blockAlign;
-            
-            const bufferSize = 44 + dataSize;
-            const arrayBuffer = new ArrayBuffer(bufferSize);
-            const view = new DataView(arrayBuffer);
-            
-            // Write WAV header
-            writeString(view, 0, 'RIFF');
-            view.setUint32(4, bufferSize - 8, true);
-            writeString(view, 8, 'WAVE');
-            writeString(view, 12, 'fmt ');
-            view.setUint32(16, 16, true);
-            view.setUint16(20, format, true);
-            view.setUint16(22, numChannels, true);
-            view.setUint32(24, sampleRate, true);
-            view.setUint32(28, byteRate, true);
-            view.setUint16(32, blockAlign, true);
-            view.setUint16(34, bitDepth, true);
-            writeString(view, 36, 'data');
-            view.setUint32(40, dataSize, true);
-            
-            // Write audio data
-            const channelData = buffer.getChannelData(0);
-            let offset = 44;
-            for (let i = 0; i < buffer.length; i++) {
-                const sample = Math.max(-1, Math.min(1, channelData[i]));
-                view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
-                offset += 2;
-            }
-            
-            return new Blob([arrayBuffer], { type: 'audio/wav' });
-        }
-        
-        function writeString(view, offset, string) {
-            for (let i = 0; i < string.length; i++) {
-                view.setUint8(offset + i, string.charCodeAt(i));
-            }
-        }
-        
-        function generateStatsAndSubtitles(mode, originalText, settings, dialogues = []) {
+        function generateStatsAndSubtitles(mode, text, settings, dialogues) {
             // Generate stats
-            const wordCount = originalText.split(/\s+/).filter(w => w.length > 0).length;
-            const charCount = originalText.length;
-            
             let stats = '';
             let subtitles = '';
             
             if (mode === 'standard') {
-                const voiceName = EGG_VOICES.find(v => v.id === settings.voice)?.name || settings.voice;
+                const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+                const charCount = text.length;
+                
                 stats = `Text processed: ${wordCount} words, ${charCount} characters\n`;
                 stats += `Speed: ${settings.speed}x, Pitch: ${settings.pitch}\n`;
-                stats += `Voice: ${voiceName}\n`;
-                stats += `API: Egg TTS`;
+                stats += `Volume: ${settings.volume}\n`;
+                stats += `Voice: ${settings.voice?.name || 'Default'}\n`;
+                stats += `Method: Browser Speech Synthesis`;
                 
-                subtitles = generateSubtitles(originalText);
+                subtitles = generateSubtitles(text);
                 
             } else if (mode === 'qa') {
-                const voiceQName = EGG_VOICES.find(v => v.id === settings.voiceQ)?.name || settings.voiceQ;
-                const voiceAName = EGG_VOICES.find(v => v.id === settings.voiceA)?.name || settings.voiceA;
-                
                 stats = `Q&A pairs: ${dialogues.length}\n`;
                 stats += `Repeat: ${settings.repeat}x\n`;
                 stats += `Question speed: ${settings.speedQ}x, Answer speed: ${settings.speedA}x\n`;
-                stats += `Question voice: ${voiceQName}\n`;
-                stats += `Answer voice: ${voiceAName}\n`;
-                stats += `API: Egg TTS`;
+                stats += `Question voice: ${settings.voiceQ?.name || 'Default'}\n`;
+                stats += `Answer voice: ${settings.voiceA?.name || 'Default'}\n`;
+                stats += `Pause: ${settings.pause}ms\n`;
+                stats += `Method: Browser Speech Synthesis`;
                 
                 subtitles = generateQASubtitles(dialogues, settings.repeat);
                 
             } else if (mode === 'multichar') {
                 stats = `Characters: ${dialogues.length} lines\n`;
                 stats += `Characters used: ${Object.keys(settings.charSettings).join(', ')}\n`;
-                stats += `Total words: ${wordCount}\n`;
-                stats += `API: Egg TTS`;
+                stats += `Method: Browser Speech Synthesis`;
                 
                 subtitles = generateMultiCharSubtitles(dialogues);
             }
@@ -1638,25 +1671,6 @@ CHAR2: I'm fine, thanks!
             URL.revokeObjectURL(url);
             
             showNotification('SRT file downloaded', 'success');
-        }
-        
-        function downloadAudio(mode) {
-            const audioBlob = currentAudioBlobs[mode];
-            if (!audioBlob) {
-                showNotification('No audio to download', 'error');
-                return;
-            }
-            
-            const url = URL.createObjectURL(audioBlob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${mode}-audio.${audioBlob.type.includes('mp3') ? 'mp3' : 'wav'}`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            showNotification('Audio file downloaded', 'success');
         }
         
         // Initialize when page loads
