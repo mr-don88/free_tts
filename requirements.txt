@@ -1,8 +1,8 @@
 edge_tts==7.2.7
-gradio==4.36.1
 pydub==0.25.1
-soundfile==0.12.1
 webvtt-py==0.5.1
-natsort==8.4.0
-numpy==1.26.4
+gradio==4.36.1
 huggingface_hub==0.23.4
+natsort==8.4.0
+soundfile==0.12.1
+numpy>=1.24.0,<2.0.0
