@@ -1,0 +1,8 @@
+edge_tts==7.2.7
+pydub>=0.25.1
+webvtt-py>=0.4.5
+gradio==4.36.1
+natsort>=8.0.0
+torch>=2.5.0
+soundfile==0.12.1
+numpy>=1.24.0,<2.0.0
