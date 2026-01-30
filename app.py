@@ -1,17 +1,4 @@
-import sys
-import subprocess
 
-# Kiểm tra và cài đặt các package hệ thống nếu cần
-try:
-    import audioop
-except ImportError:
-    print("Warning: audioop not found, attempting workaround...")
-    # Sử dụng pyaudioop thay thế
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyaudioop"])
-    import pyaudioop as audioop
-    # Monkey patch để pydub sử dụng pyaudioop
-    import pydub.utils
-    pydub.utils.audioop = audioop
 
 import gradio as gr
 import edge_tts
