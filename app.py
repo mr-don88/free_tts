@@ -1,11 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-TTS Story Generator - Text-to-Speech Application
-No pydub dependency version
-"""
 
-# ==================== IMPORTS ====================
 import os
 import sys
 import json
