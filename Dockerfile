@@ -2,19 +2,23 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Cài ffmpeg + thư viện hệ thống cần cho audio
-RUN apt-get update && apt-get install -y ffmpeg libsndfile1 && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
-
-# Tránh lỗi version pip
-RUN pip install --upgrade pip setuptools wheel
-
-# Cài thư viện Python
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy application code
 COPY . .
 
-EXPOSE 7860
+# Create necessary directories
+RUN mkdir -p outputs temp static/css static/js templates
 
+# Expose port
+EXPOSE 8000
+
+# Run the application
 CMD ["python", "app.py"]
