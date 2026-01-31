@@ -1340,7 +1340,11 @@ class TTSProcessor:
                 current_time += pause
         
         # Xuất file audio
-        output_file = os.path.join(output_dir, f"single_voice.{output_format}")
+        file_id = uuid.uuid4().hex
+        output_file = os.path.join(
+            output_dir,
+            f"single_voice_{file_id}.{output_format}"
+        )
         combined.export(output_file, format=output_format, bitrate="192k")  # Giảm bitrate
         
         # Tạo file subtitle
