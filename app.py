@@ -1,3 +1,4 @@
+# app.py
 import gradio as gr
 import edge_tts
 import os
@@ -14,65 +15,49 @@ import webvtt
 import re
 from typing import Dict, List, Tuple, Optional
 from datetime import timedelta
-
 import numpy as np
 import wave
-import time
+import io
 
+# ==================== SYSTEM CONFIGURATION ====================
+class TTSConfig:
+    SETTINGS_FILE = "edge_tts_settings.json"
 
+    LANGUAGES = {
+        "Tiếng Việt": [
+            {"name": "vi-VN-HoaiMyNeural", "gender": "Nữ"},
+            {"name": "vi-VN-NamMinhNeural", "gender": "Nam"}
+        ],
+        "English (US)": [
+            {"name": "en-US-GuyNeural", "gender": "Nam"},
+            {"name": "en-US-JennyNeural", "gender": "Nữ"},
+            {"name": "en-US-AvaNeural", "gender": "Nữ"},
+            {"name": "en-US-AndrewNeural", "gender": "Nam"},
+            {"name": "en-US-EmmaNeural", "gender": "Nữ"},
+            {"name": "en-US-BrianNeural", "gender": "Nam"},
+            {"name": "en-US-AnaNeural", "gender": "Nữ"},
+            {"name": "en-US-AndrewMultilingualNeural", "gender": "Nam"},
+            {"name": "en-US-AriaNeural", "gender": "Nữ"},
+            {"name": "en-US-AvaMultilingualNeural", "gender": "Nữ"},
+            {"name": "en-US-BrianMultilingualNeural", "gender": "Nam"},
+            {"name": "en-US-ChristopherNeural", "gender": "Nam"},
+            {"name": "en-US-EmmaMultilingualNeural", "gender": "Nữ"},
+            {"name": "en-US-EricNeural", "gender": "Nam"},
+            {"name": "en-US-MichelleNeural", "gender": "Nữ"},
+            {"name": "en-US-RogerNeural", "gender": "Nam"},
+            {"name": "en-US-SteffanNeural", "gender": "Nam"}
+        ],
+        "English (UK)": [
+            {"name": "en-GB-LibbyNeural", "gender": "Nữ"},
+            {"name": "en-GB-MiaNeural", "gender": "Nữ"},
+            {"name": "en-GB-RyanNeural", "gender": "Nam"},
+            {"name": "en-GB-MaisieNeural", "gender": "Nữ"},
+            {"name": "en-GB-SoniaNeural", "gender": "Nữ"},
+            {"name": "en-GB-ThomasNeural", "gender": "Nam"}
+        ]
+    }
 
-
-
-# Khởi tạo môi trường - Ưu tiên GPU
-
-class TTSModel:
-    def __init__(self):
-        self.models = {}
-        self.tokenizer = Tokenizer()
-        self.voice_cache = {}
-        self.voice_files = self._discover_voices()
-        
-        try:
-            if self.use_cuda:
-                self.models['cuda'] = torch.compile(KModel().to('cuda').eval(), mode='max-autotune')
-                with torch.no_grad():
-                    _ = self.models['cuda'](torch.randn(1, 64).cuda(), torch.randn(1, 80, 100).cuda(), 1.0)
-            
-            self.models['cpu'] = KModel().to('cpu').eval()
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            self.models = {'cpu': KModel().to('cpu').eval()}
-        
-        self.pipelines = {
-            'a': KPipeline(lang_code='a', model=False),
-            'b': KPipeline(lang_code='b', model=False)
-        }
-    
-    def _discover_voices(self):
-        """Discover available voice files in the voices folder"""
-        voice_files = {}
-        voices_dir = "voices"
-        
-        if not os.path.exists(voices_dir):
-            os.makedirs(voices_dir)
-            print(f"Created voices directory at {os.path.abspath(voices_dir)}")
-            return voice_files
-            
-        for file in os.listdir(voices_dir):
-            if file.endswith(".pt"):
-                voice_name = os.path.splitext(file)[0]
-                voice_files[voice_name] = os.path.join(voices_dir, file)
-                print(f"Found voice: {voice_name}")
-                
-        return voice_files
-
-    def get_voice_list(self):
-        """Get list of available voices for the UI"""
-        voices = list(self.voice_files.keys())
-        if not voices:
-            print("Warning: No voice files found in voices folder")
-        return voices
-
+# ==================== TEXT PROCESSOR ====================
 class TextProcessor:
     @staticmethod
     def clean_text(text: str) -> str:
@@ -231,7 +216,7 @@ class TextProcessor:
     
     @staticmethod
     def _process_currency(text: str) -> str:
-        """Xử lý tiền tệ (hỗ trợ số nguyên, thập phân, và dấu chấm cuối câu)"""
+        """Xử lý tiền tệ (hỗ trợ số nguyên, thập phân, và dấu chấp cuối câu)"""
         currency_map = {
             '$': 'dollars',
             '€': 'euros',
@@ -469,15 +454,7 @@ class TextProcessor:
                 parts.append(digits)
             return ', '.join(parts)  # Thêm dấu phẩy để tạo ngắt nghỉ khi đọc
     
-        return re.sub(phone_pattern, phone_to_words, text)    
-        @staticmethod
-        def _process_currency_numbers(text: str) -> str:
-            return re.sub(
-                r'\$?(\d{1,3}(?:,\d{3})*(?:\.\d+)?)\b',
-                lambda m: f"{TextProcessor._number_to_words(m.group(1))} dollars" if '$' in m.group(0) 
-                         else TextProcessor._number_to_words(m.group(1)),
-                text
-            )
+        return re.sub(phone_pattern, phone_to_words, text)
 
     @staticmethod
     def _digit_to_word(digit: str) -> str:
@@ -594,7 +571,7 @@ class TextProcessor:
             
         return dialogues
 
-
+# ==================== AUDIO PROCESSOR ====================
 class AudioProcessor:
     @staticmethod
     def enhance_audio(audio: np.ndarray, volume: float = 1.0, pitch: float = 1.0) -> np.ndarray:
@@ -673,76 +650,6 @@ class AudioProcessor:
         
         return combined
         
-    @staticmethod
-    def combine_with_pauses(segments: List[AudioSegment], pauses: List[int]) -> AudioSegment:
-        combined = AudioSegment.empty()
-        for i, (seg, pause) in enumerate(zip(segments, pauses)):
-            seg = seg.fade_in(50).fade_out(50)
-            combined += seg
-            if i < len(segments) - 1:
-                combined += AudioSegment.silent(duration=pause)
-        return combined
-
-
-# ==================== SYSTEM CONFIGURATION ====================
-class TTSConfig:
-    SETTINGS_FILE = "edge_tts_settings.json"
-
-    LANGUAGES = {
-        "Tiếng Việt": [
-            {"name": "vi-VN-HoaiMyNeural", "gender": "Nữ"},
-            {"name": "vi-VN-NamMinhNeural", "gender": "Nam"}
-        ],
-        "English (US)": [
-            {"name": "en-US-GuyNeural", "gender": "Nam"},
-            {"name": "en-US-JennyNeural", "gender": "Nữ"},
-            {"name": "en-US-AvaNeural", "gender": "Nữ"},
-            {"name": "en-US-AndrewNeural", "gender": "Nam"},
-            {"name": "en-US-EmmaNeural", "gender": "Nữ"},
-            {"name": "en-US-BrianNeural", "gender": "Nam"},
-            {"name": "en-US-AnaNeural", "gender": "Nữ"},
-            {"name": "en-US-AndrewMultilingualNeural", "gender": "Nam"},
-            {"name": "en-US-AriaNeural", "gender": "Nữ"},
-            {"name": "en-US-AvaMultilingualNeural", "gender": "Nữ"},
-            {"name": "en-US-BrianMultilingualNeural", "gender": "Nam"},
-            {"name": "en-US-ChristopherNeural", "gender": "Nam"},
-            {"name": "en-US-EmmaMultilingualNeural", "gender": "Nữ"},
-            {"name": "en-US-EricNeural", "gender": "Nam"},
-            {"name": "en-US-MichelleNeural", "gender": "Nữ"},
-            {"name": "en-US-RogerNeural", "gender": "Nam"},
-            {"name": "en-US-SteffanNeural", "gender": "Nam"}
-        ],
-        "English (UK)": [
-            {"name": "en-GB-LibbyNeural", "gender": "Nữ"},
-            {"name": "en-GB-MiaNeural", "gender": "Nữ"},
-            {"name": "en-GB-RyanNeural", "gender": "Nam"},
-            {"name": "en-GB-MaisieNeural", "gender": "Nữ"},
-            {"name": "en-GB-SoniaNeural", "gender": "Nữ"},
-            {"name": "en-GB-ThomasNeural", "gender": "Nam"}
-        ]
-    }
-
-# ==================== AUDIO PROCESSOR ====================
-class AudioProcessor:
-    @staticmethod
-    def calculate_pause(text: str, pause_settings: Dict[str, int]) -> int:
-        """Calculate pause duration with more precise rules"""
-        text = text.strip()
-        if not text:
-            return 0
-            
-        # Special cases that should have no pause
-        if re.search(r'(?:^|\s)(?:Mr|Mrs|Ms|Dr|Prof|St|A\.M|P\.M|etc|e\.g|i\.e)\.$', text, re.IGNORECASE):
-            return 0
-            
-        # Time formats (12:30) - minimal pause
-        if re.search(r'\b\d{1,2}:\d{2}\b', text):
-            return pause_settings.get('time_colon_pause', 50)  # Default 50ms for times
-            
-        # Determine pause based on last character
-        last_char = text[-1]
-        return pause_settings.get(last_char, pause_settings['default_pause'])
-
     @staticmethod
     def combine_with_pauses(segments: List[AudioSegment], pauses: List[int]) -> AudioSegment:
         combined = AudioSegment.empty()
@@ -890,7 +797,7 @@ class BaseTTSProcessor:
                         "start": chunk["offset"],
                         "end": chunk["offset"] + chunk["duration"]
                     })
-                    start_time = end_time
+                    start_time = chunk["offset"] + chunk["duration"]
             
             # Audio processing pipeline
             audio = AudioSegment.from_file(temp_file)
@@ -941,12 +848,12 @@ class BaseTTSProcessor:
         minutes, seconds = divmod(seconds, 60)
         hours, minutes = divmod(minutes, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
-		
+    
     def check_srt_generated(self, audio_path):
         if not audio_path:
             return False
         srt_path = audio_path.replace('.mp3', '.srt')
-        return os.path.exists(srt_path)		
+        return os.path.exists(srt_path)
 
 # ==================== TAB 1: SINGLE CHARACTER ====================
 class StoryTTSProcessor(BaseTTSProcessor):
@@ -1057,70 +964,11 @@ class StoryTTSProcessor(BaseTTSProcessor):
                 ))
             
             # Add pause time after each line
-            current_time += line_subs[-1]["end"] + pause_duration if line_subs else 0
+            current_time += (line_subs[-1]["end"] if line_subs else 0) + pause_duration
         
         srt_path = audio_path.replace('.mp3', '.srt')
         vtt.save(srt_path)
         return srt_path
-
-def generate_story_audio(self, text: str, voice: str, speed: float, device: str,
-                       pause_settings: Dict[str, int], volume: float = 1.0, pitch: float = 1.0) -> Tuple[Tuple[int, np.ndarray], str, str]:
-    start_time = time.time()
-    clean_text = self.text_processor.clean_text(text)
-    sentences = self.text_processor.split_sentences(clean_text)
-    
-    if not sentences:
-        return None, "No content to read", ""
-    
-    audio_segments = []
-    pause_durations = []
-    
-    # Adjust pause settings based on speed
-    speed_factor = max(0.5, min(2.0, speed))
-    adjusted_pause_settings = {
-        k: int(v / speed_factor) for k, v in pause_settings.items()
-    }
-    
-    # Generate each audio segment
-    for sentence in sentences:
-        result = self.generate_sentence_audio(sentence, voice, speed, device, volume, pitch)
-        if not result:
-            continue
-            
-        sample_rate, audio_data = result
-        audio_seg = AudioSegment(
-            (audio_data * 32767).astype(np.int16).tobytes(),
-            frame_rate=sample_rate,
-            sample_width=2,
-            channels=1
-        )
-        audio_segments.append(audio_seg)
-        
-        # Calculate precise pause duration
-        pause = self.audio_processor.calculate_pause(sentence, adjusted_pause_settings)
-        pause_durations.append(pause)
-    
-    if not audio_segments:
-        return None, "Failed to generate audio", ""
-    
-    # Combine with frame-accurate timing
-    combined_audio = self.audio_processor.combine_segments(audio_segments, pause_durations)
-    
-    # Export with precise timing
-    with io.BytesIO() as buffer:
-        combined_audio.export(buffer, format="mp3", bitrate="256k", parameters=["-ar", str(combined_audio.frame_rate)])
-        buffer.seek(0)
-        audio_data = np.frombuffer(buffer.read(), dtype=np.uint8)
-    
-    # Generate subtitles with the same timing used for audio
-    subtitles = self.subtitle_generator.generate_srt(audio_segments, sentences, adjusted_pause_settings)
-    
-    stats = (f"Processed {len(clean_text)} chars, {len(clean_text.split())} words\n"
-            f"Audio duration: {len(combined_audio)/1000:.2f}s\n"
-            f"Time: {time.time() - start_time:.2f}s\n"
-            f"Device: {device.upper()}")
-    
-    return (combined_audio.frame_rate, audio_data), stats, subtitles	
 
 # ==================== TAB 2: MULTI CHARACTER ====================
 class MultiCharacterTTSProcessor(BaseTTSProcessor):
@@ -1520,395 +1368,385 @@ def update_voice_dropdown(language, tab_name, char_num=None):
         elif char_num == "a":
             return gr.Dropdown(choices=voice_options, value=default_voice)
 
-def toggle_srt_download(audio_path, message):
-    if audio_path and os.path.exists(audio_path.replace('.mp3', '.srt')):
-        return gr.Button(visible=True), gr.Button(visible=True)
-    return gr.Button(visible=False), gr.Button(visible=False)
+def is_valid_audio_path(audio_output):
+    """Check if audio output is valid"""
+    if audio_output is None:
+        return False
+    if isinstance(audio_output, (tuple, list)):
+        return len(audio_output) > 0 and isinstance(audio_output[0], str) and audio_output[0].endswith('.mp3')
+    elif isinstance(audio_output, str):
+        return audio_output.endswith('.mp3')
+    return False
 
 def show_subtitles(audio_output):
-    """Xử lý mọi trường hợp đầu vào không hợp lệ"""
-    # Nếu là số nguyên (sample rate), bỏ qua
-    if isinstance(audio_output, (int, float)):
-        return "⏳ Đang xử lý audio..."
-        
-    # Xử lý các trường hợp còn lại như trước
-    if audio_output is None:
+    """Display subtitles if available"""
+    if not is_valid_audio_path(audio_output):
         return "⏳ Chưa có audio được tạo"
-        
-    if isinstance(audio_output, (tuple, list)) and len(audio_output) > 0:
+    
+    if isinstance(audio_output, (tuple, list)):
         audio_path = audio_output[0]
-    elif isinstance(audio_output, str):
-        audio_path = audio_output
     else:
-        return "⚠️ Định dạng đầu vào không hỗ trợ"
-
-    if not isinstance(audio_path, str) or not audio_path.endswith('.mp3'):
-        return f"⚠️ Đường dẫn audio không hợp lệ: {audio_path}"
-
+        audio_path = audio_output
+    
     srt_path = audio_path.replace('.mp3', '.srt')
     if not os.path.exists(srt_path):
         return "⚠️ Không tìm thấy file phụ đề"
-
+    
     try:
         with open(srt_path, 'r', encoding='utf-8') as f:
             return f.read()
     except Exception as e:
         return f"❌ Lỗi đọc phụ đề: {str(e)}"
-	
-def toggle_srt_display(audio_path):
-    if not audio_path:
-        return gr.Button(visible=False), gr.Textbox(visible=False)
-    
-    srt_path = audio_path.replace('.mp3', '.srt')
-    if os.path.exists(srt_path):
-        return gr.Button(visible=True), gr.Textbox(visible=True)
-    return gr.Button(visible=False), gr.Textbox(visible=False)
 
-def load_subtitles(audio_path):
-    if not audio_path:
-        return ""
-    
-    srt_path = audio_path.replace('.mp3', '.srt')
-    try:
-        with open(srt_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    except:
-        return "Không thể đọc file phụ đề"	
-
-with gr.Blocks(title="TTS Story Generator") as app:
-    gr.Markdown("<h1 style='text-align: center'>📖 TTS Story Generator</h1>")
-    
-    with gr.Tabs() as tabs:
-        # ========== TAB 1: SINGLE CHARACTER ==========
-        with gr.Tab("1 Nhân vật"):
-            single_processor = StoryTTSProcessor()
-            settings = single_processor.settings.get("single_char", {})
-            
-            with gr.Row():
-                with gr.Column():
-                    content = gr.Textbox(label="Nội dung truyện", lines=10, placeholder="Nhập nội dung truyện (mỗi dòng là một đoạn)...")
-                    language = gr.Dropdown(
-                        label="Ngôn ngữ",
-                        choices=list(TTSConfig.LANGUAGES.keys()),
-                        value=settings.get("language", "Tiếng Việt")
-                    )
-                    voice = gr.Dropdown(
-                        label="Giọng đọc",
-                        choices=[v for v in single_processor.voice_map.keys() if v.startswith(settings.get("language", "Tiếng Việt"))],
-                        value=settings.get("voice", "Tiếng Việt - HoaiMy (Nữ)")
-                    )
-                    
-                    rate = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate", 0))
-                    pitch = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch", 0))
-                    volume = gr.Slider(label="Âm lượng (%)", minimum=50, maximum=150, step=1, value=settings.get("volume", 100))
-                    pause = gr.Slider(label="Khoảng nghỉ (ms)", minimum=100, maximum=2000, step=50, value=settings.get("pause", 500))
-                    save_settings = gr.Checkbox(label="Lưu cài đặt", value=False)
-                    submit_btn = gr.Button("🎤 Tạo truyện audio", variant="primary")
+# ==================== MAIN APPLICATION ====================
+def create_app():
+    with gr.Blocks(title="TTS Story Generator", theme=gr.themes.Soft()) as app:
+        gr.Markdown("<h1 style='text-align: center'>📖 TTS Story Generator</h1>")
+        
+        with gr.Tabs() as tabs:
+            # ========== TAB 1: SINGLE CHARACTER ==========
+            with gr.Tab("1 Nhân vật"):
+                single_processor = StoryTTSProcessor()
+                settings = single_processor.settings.get("single_char", {})
                 
-                with gr.Column():
-                    output_audio = gr.Audio(label="Audio đã tạo", interactive=False)
-                    output_text = gr.Textbox(label="Trạng thái", interactive=False)
-                    
-                    with gr.Row():
-                        download_srt = gr.Button("📥 Tải phụ đề (.srt)", visible=False)
-                        clear_btn = gr.Button("🧹 Xóa phụ đề", visible=False)
-                    
-                    subtitles_display = gr.Textbox(
-                        label="Nội dung phụ đề",
-                        interactive=False,
-                        visible=True,
-                        lines=10,
-                        max_lines=20,
-                        elem_classes=["subtitle-box"]
-                    )				
-            
-            language.change(
-                lambda lang: update_voice_dropdown(lang, "single"),
-                inputs=language,
-                outputs=voice
-            )
-            
-            submit_btn.click(
-                single_processor.process_story,
-                inputs=[content, voice, rate, pitch, volume, pause, save_settings],
-                outputs=[output_audio, download_srt, output_text]
-            )
-            
-            output_audio.change(
-                lambda audio_output: (
-                    gr.Button(visible=is_valid_audio_path(audio_output)),
-                    gr.Button(visible=is_valid_audio_path(audio_output))
-                ),
-                inputs=output_audio,
-                outputs=[download_srt, clear_btn]
-            ).then(
-                show_subtitles,
-                inputs=output_audio,
-                outputs=subtitles_display
-            )
-            
-            clear_btn.click(
-                lambda: ("", False, False),
-                outputs=[subtitles_display, download_srt, clear_btn]
-            )
-
-        # ========== TAB 2: MULTI CHARACTER ==========
-        with gr.Tab("Đa nhân vật"):
-            multi_processor = MultiCharacterTTSProcessor()
-            settings = multi_processor.settings.get("multi_char", {})
-            
-            with gr.Row():
-                with gr.Column():
-                    content = gr.Textbox(label="Nội dung câu chuyện", lines=10, 
-                                        placeholder="CHAR1: Lời thoại nhân vật 1\nCHAR2: Lời thoại nhân vật 2\nCHAR3: Lời thoại nhân vật 3\nNARRATOR: Lời dẫn truyện")
-                    
-                    with gr.Accordion("⚙️ Cài đặt giọng nói nhân vật", open=True):
-                        with gr.Row():
-                            char1_language = gr.Dropdown(
-                                label="Ngôn ngữ NV1",
-                                choices=sorted(list(TTSConfig.LANGUAGES.keys())),
-                                value=settings.get("language_char1", "Tiếng Việt")
-                            )
-                            char1_voice = gr.Dropdown(
-                                label="Giọng NV1",
-                                choices=[v for v in multi_processor.voice_map.keys() if v.startswith(settings.get("language_char1", "Tiếng Việt"))],
-                                value=settings.get("voice_char1", "Tiếng Việt - HoaiMy (Nữ)")
-                            )
+                with gr.Row():
+                    with gr.Column():
+                        content = gr.Textbox(label="Nội dung truyện", lines=10, placeholder="Nhập nội dung truyện (mỗi dòng là một đoạn)...")
+                        language = gr.Dropdown(
+                            label="Ngôn ngữ",
+                            choices=list(TTSConfig.LANGUAGES.keys()),
+                            value=settings.get("language", "Tiếng Việt")
+                        )
+                        voice = gr.Dropdown(
+                            label="Giọng đọc",
+                            choices=[v for v in single_processor.voice_map.keys() if v.startswith(settings.get("language", "Tiếng Việt"))],
+                            value=settings.get("voice", "Tiếng Việt - HoaiMy (Nữ)")
+                        )
                         
-                        with gr.Row():
-                            char2_language = gr.Dropdown(
-                                label="Ngôn ngữ NV2",
-                                choices=sorted(list(TTSConfig.LANGUAGES.keys())),
-                                value=settings.get("language_char2", "Tiếng Việt")
-                            )
-                            char2_voice = gr.Dropdown(
-                                label="Giọng NV2",
-                                choices=[v for v in multi_processor.voice_map.keys() if v.startswith(settings.get("language_char2", "Tiếng Việt"))],
-                                value=settings.get("voice_char2", "Tiếng Việt - NamMinh (Nam)")
-                            )
-                        
-                        with gr.Row():
-                            char3_language = gr.Dropdown(
-                                label="Ngôn ngữ NV3",
-                                choices=sorted(list(TTSConfig.LANGUAGES.keys())),
-                                value=settings.get("language_char3", "Tiếng Việt")
-                            )
-                            char3_voice = gr.Dropdown(
-                                label="Giọng NV3",
-                                choices=[v for v in multi_processor.voice_map.keys() if v.startswith(settings.get("language_char3", "Tiếng Việt"))],
-                                value=settings.get("voice_char3", "Tiếng Việt - HoaiMy (Nữ)")
-                            )
-                    
-                    with gr.Accordion("🔧 Điều chỉnh nhân vật 1", open=False):
-                        char1_rate = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_char1", -20))
-                        char1_pitch = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_char1", 0))
-                        char1_volume = gr.Slider(label="Âm lượng (%)", minimum=50, maximum=150, step=1, value=settings.get("volume_char1", 100))
-                    
-                    with gr.Accordion("🔧 Điều chỉnh nhân vật 2", open=False):
-                        char2_rate = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_char2", -25))
-                        char2_pitch = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_char2", 0))
-                        char2_volume = gr.Slider(label="Âm lượng (%)", minimum=50, maximum=150, step=1, value=settings.get("volume_char2", 100))
-                    
-                    with gr.Accordion("🔧 Điều chỉnh nhân vật 3", open=False):
-                        char3_rate = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_char3", -15))
-                        char3_pitch = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_char3", 0))
-                        char3_volume = gr.Slider(label="Âm lượng (%)", minimum=50, maximum=150, step=1, value=settings.get("volume_char3", 100))
-                    
-                    with gr.Accordion("🔄 Cài đặt chung", open=False):
-                        repeat_times = gr.Slider(label="Số lần lặp", minimum=1, maximum=5, step=1, value=settings.get("repeat_times", 1))
-                        pause_between = gr.Slider(label="Khoảng nghỉ (ms)", minimum=100, maximum=2000, step=50, value=settings.get("pause_between", 500))
-                        output_format = gr.Dropdown(label="Định dạng đầu ra", choices=["MP3", "WAV"], value="MP3")
+                        rate = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate", 0))
+                        pitch = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch", 0))
+                        volume = gr.Slider(label="Âm lượng (%)", minimum=50, maximum=150, step=1, value=settings.get("volume", 100))
+                        pause = gr.Slider(label="Khoảng nghỉ (ms)", minimum=100, maximum=2000, step=50, value=settings.get("pause", 500))
                         save_settings = gr.Checkbox(label="Lưu cài đặt", value=False)
+                        submit_btn = gr.Button("🎤 Tạo truyện audio", variant="primary")
                     
-                    submit_btn = gr.Button("🎧 Tạo câu chuyện audio", variant="primary")
-                
-                with gr.Column():
-                    output_audio = gr.Audio(label="Audio đã tạo", interactive=False)
-                    output_text = gr.Textbox(label="Trạng thái", interactive=False)
-                    
-                    with gr.Row():
-                        download_srt = gr.Button("📥 Tải phụ đề (.srt)", visible=False)
-                        clear_btn = gr.Button("🧹 Xóa phụ đề", visible=False)
-                    
-                    subtitles_display = gr.Textbox(
-                        label="Nội dung phụ đề",
-                        interactive=False,
-                        visible=True,
-                        lines=10,
-                        max_lines=20,
-                        elem_classes=["subtitle-box"]
-                    )
-            
-            # Update voice dropdowns
-            char1_language.change(
-                lambda lang: update_voice_dropdown(lang, "multi", 1),
-                inputs=char1_language,
-                outputs=char1_voice
-            )
-            
-            char2_language.change(
-                lambda lang: update_voice_dropdown(lang, "multi", 2),
-                inputs=char2_language,
-                outputs=char2_voice
-            )
-            
-            char3_language.change(
-                lambda lang: update_voice_dropdown(lang, "multi", 3),
-                inputs=char3_language,
-                outputs=char3_voice
-            )
-            
-            submit_btn.click(
-                multi_processor.process_story,
-                inputs=[content, output_format,
-                       char1_voice, char2_voice, char3_voice,
-                       char1_rate, char2_rate, char3_rate,
-                       char1_pitch, char2_pitch, char3_pitch,
-                       char1_volume, char2_volume, char3_volume,
-                       repeat_times, pause_between, save_settings],
-                outputs=[output_audio, download_srt, output_text]
-            )
-            
-            output_audio.change(
-                lambda audio_output: (
-                    gr.Button(visible=is_valid_audio_path(audio_output)),
-                    gr.Button(visible=is_valid_audio_path(audio_output))
-                ),
-                inputs=output_audio,
-                outputs=[download_srt, clear_btn]
-            ).then(
-                show_subtitles,
-                inputs=output_audio,
-                outputs=subtitles_display
-            )
-            
-            download_srt.click(
-                lambda audio_path: audio_path.replace('.mp3', '.srt') if audio_path else None,
-                inputs=output_audio,
-                outputs=gr.File(label="Tải phụ đề")
-            )
-
-        # ========== TAB 3: Q&A DIALOGUE ==========
-        with gr.Tab("Hỏi & Đáp"):
-            dialogue_processor = DialogueTTSProcessor()
-            settings = dialogue_processor.settings.get("dialogue", {})
-            
-            with gr.Row():
-                with gr.Column():
-                    content = gr.Textbox(label="Nội dung hội thoại", lines=10, 
-                                       placeholder="Q: Câu hỏi\nA: Câu trả lời\nQ: Câu hỏi tiếp theo\nA: Câu trả lời tiếp theo")
-                    
-                    with gr.Accordion("⚙️ Cài đặt giọng nói", open=True):
-                        with gr.Row():
-                            language_q = gr.Dropdown(
-                                label="Ngôn ngữ câu hỏi",
-                                choices=sorted(list(TTSConfig.LANGUAGES.keys())),
-                                value=settings.get("language_q", "Tiếng Việt")
-                            )
-                            voice_q = gr.Dropdown(
-                                label="Giọng câu hỏi",
-                                choices=[v for v in dialogue_processor.voice_map.keys() if v.startswith(settings.get("language_q", "Tiếng Việt"))],
-                                value=settings.get("voice_q", "Tiếng Việt - HoaiMy (Nữ)")
-                            )
+                    with gr.Column():
+                        output_audio = gr.Audio(label="Audio đã tạo", interactive=False)
+                        output_text = gr.Textbox(label="Trạng thái", interactive=False)
                         
                         with gr.Row():
-                            language_a = gr.Dropdown(
-                                label="Ngôn ngữ câu trả lời",
-                                choices=sorted(list(TTSConfig.LANGUAGES.keys())),
-                                value=settings.get("language_a", "Tiếng Việt")
-                            )
-                            voice_a = gr.Dropdown(
-                                label="Giọng câu trả lời",
-                                choices=[v for v in dialogue_processor.voice_map.keys() if v.startswith(settings.get("language_a", "Tiếng Việt"))],
-                                value=settings.get("voice_a", "Tiếng Việt - NamMinh (Nam)")
-                            )
-                    
-                    with gr.Accordion("🔧 Điều chỉnh giọng câu hỏi", open=False):
-                        rate_q = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_q", -20))
-                        pitch_q = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_q", 0))
-                        volume_q = gr.Slider(label="Âm lượng (%)", minimum=80, maximum=110, step=1, value=settings.get("volume_q", 100))
-                    
-                    with gr.Accordion("🔧 Điều chỉnh giọng câu trả lời", open=False):
-                        rate_a = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_a", -25))
-                        pitch_a = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_a", 0))
-                        volume_a = gr.Slider(label="Âm lượng (%)", minimum=80, maximum=110, step=1, value=settings.get("volume_a", 100))
-                    
-                    with gr.Accordion("🔄 Cài đặt lặp lại", open=False):
-                        repeat_times = gr.Slider(label="Số lần lặp", minimum=1, maximum=5, step=1, value=settings.get("repeat_times", 2))
-                        pause_q = gr.Slider(label="Khoảng nghỉ câu hỏi (ms)", minimum=100, maximum=1000, step=50, value=settings.get("pause_q", 200))
-                        pause_a = gr.Slider(label="Khoảng nghỉ câu trả lời (ms)", minimum=100, maximum=2000, step=50, value=settings.get("pause_a", 500))
-                        output_format = gr.Dropdown(label="Định dạng đầu ra", choices=["MP3", "WAV"], value="MP3")
-                        save_settings = gr.Checkbox(label="Lưu cài đặt", value=False)
-                    
-                    submit_btn = gr.Button("🎧 Tạo audio hội thoại", variant="primary")
+                            download_srt = gr.Button("📥 Tải phụ đề (.srt)", visible=False)
+                            clear_btn = gr.Button("🧹 Xóa phụ đề", visible=False)
+                        
+                        subtitles_display = gr.Textbox(
+                            label="Nội dung phụ đề",
+                            interactive=False,
+                            visible=True,
+                            lines=10,
+                            max_lines=20,
+                            elem_classes=["subtitle-box"]
+                        )				
                 
-                with gr.Column():
-                    output_audio = gr.Audio(label="Audio đã tạo", interactive=False)
-                    output_text = gr.Textbox(label="Trạng thái", interactive=False)
+                language.change(
+                    lambda lang: update_voice_dropdown(lang, "single"),
+                    inputs=language,
+                    outputs=voice
+                )
+                
+                submit_btn.click(
+                    single_processor.process_story,
+                    inputs=[content, voice, rate, pitch, volume, pause, save_settings],
+                    outputs=[output_audio, download_srt, output_text]
+                )
+                
+                output_audio.change(
+                    lambda audio_output: (
+                        gr.Button(visible=is_valid_audio_path(audio_output)),
+                        gr.Button(visible=is_valid_audio_path(audio_output))
+                    ),
+                    inputs=output_audio,
+                    outputs=[download_srt, clear_btn]
+                ).then(
+                    show_subtitles,
+                    inputs=output_audio,
+                    outputs=subtitles_display
+                )
+                
+                download_srt.click(
+                    lambda audio_path: audio_path.replace('.mp3', '.srt') if audio_path else None,
+                    inputs=output_audio,
+                    outputs=gr.File(label="Tải phụ đề")
+                )
+                
+                clear_btn.click(
+                    lambda: ("", False, False),
+                    outputs=[subtitles_display, download_srt, clear_btn]
+                )
+
+            # ========== TAB 2: MULTI CHARACTER ==========
+            with gr.Tab("Đa nhân vật"):
+                multi_processor = MultiCharacterTTSProcessor()
+                settings = multi_processor.settings.get("multi_char", {})
+                
+                with gr.Row():
+                    with gr.Column():
+                        content = gr.Textbox(label="Nội dung câu chuyện", lines=10, 
+                                            placeholder="CHAR1: Lời thoại nhân vật 1\nCHAR2: Lời thoại nhân vật 2\nCHAR3: Lời thoại nhân vật 3\nNARRATOR: Lời dẫn truyện")
+                        
+                        with gr.Accordion("⚙️ Cài đặt giọng nói nhân vật", open=True):
+                            with gr.Row():
+                                char1_language = gr.Dropdown(
+                                    label="Ngôn ngữ NV1",
+                                    choices=sorted(list(TTSConfig.LANGUAGES.keys())),
+                                    value=settings.get("language_char1", "Tiếng Việt")
+                                )
+                                char1_voice = gr.Dropdown(
+                                    label="Giọng NV1",
+                                    choices=[v for v in multi_processor.voice_map.keys() if v.startswith(settings.get("language_char1", "Tiếng Việt"))],
+                                    value=settings.get("voice_char1", "Tiếng Việt - HoaiMy (Nữ)")
+                                )
+                            
+                            with gr.Row():
+                                char2_language = gr.Dropdown(
+                                    label="Ngôn ngữ NV2",
+                                    choices=sorted(list(TTSConfig.LANGUAGES.keys())),
+                                    value=settings.get("language_char2", "Tiếng Việt")
+                                )
+                                char2_voice = gr.Dropdown(
+                                    label="Giọng NV2",
+                                    choices=[v for v in multi_processor.voice_map.keys() if v.startswith(settings.get("language_char2", "Tiếng Việt"))],
+                                    value=settings.get("voice_char2", "Tiếng Việt - NamMinh (Nam)")
+                                )
+                            
+                            with gr.Row():
+                                char3_language = gr.Dropdown(
+                                    label="Ngôn ngữ NV3",
+                                    choices=sorted(list(TTSConfig.LANGUAGES.keys())),
+                                    value=settings.get("language_char3", "Tiếng Việt")
+                                )
+                                char3_voice = gr.Dropdown(
+                                    label="Giọng NV3",
+                                    choices=[v for v in multi_processor.voice_map.keys() if v.startswith(settings.get("language_char3", "Tiếng Việt"))],
+                                    value=settings.get("voice_char3", "Tiếng Việt - HoaiMy (Nữ)")
+                                )
+                        
+                        with gr.Accordion("🔧 Điều chỉnh nhân vật 1", open=False):
+                            char1_rate = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_char1", -20))
+                            char1_pitch = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_char1", 0))
+                            char1_volume = gr.Slider(label="Âm lượng (%)", minimum=50, maximum=150, step=1, value=settings.get("volume_char1", 100))
+                        
+                        with gr.Accordion("🔧 Điều chỉnh nhân vật 2", open=False):
+                            char2_rate = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_char2", -25))
+                            char2_pitch = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_char2", 0))
+                            char2_volume = gr.Slider(label="Âm lượng (%)", minimum=50, maximum=150, step=1, value=settings.get("volume_char2", 100))
+                        
+                        with gr.Accordion("🔧 Điều chỉnh nhân vật 3", open=False):
+                            char3_rate = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_char3", -15))
+                            char3_pitch = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_char3", 0))
+                            char3_volume = gr.Slider(label="Âm lượng (%)", minimum=50, maximum=150, step=1, value=settings.get("volume_char3", 100))
+                        
+                        with gr.Accordion("🔄 Cài đặt chung", open=False):
+                            repeat_times = gr.Slider(label="Số lần lặp", minimum=1, maximum=5, step=1, value=settings.get("repeat_times", 1))
+                            pause_between = gr.Slider(label="Khoảng nghỉ (ms)", minimum=100, maximum=2000, step=50, value=settings.get("pause_between", 500))
+                            output_format = gr.Dropdown(label="Định dạng đầu ra", choices=["MP3", "WAV"], value="MP3")
+                            save_settings = gr.Checkbox(label="Lưu cài đặt", value=False)
+                        
+                        submit_btn = gr.Button("🎧 Tạo câu chuyện audio", variant="primary")
                     
-                    with gr.Row():
-                        download_srt = gr.Button("📥 Tải phụ đề (.srt)", visible=False)
-                        clear_btn = gr.Button("🧹 Xóa phụ đề", visible=False)
+                    with gr.Column():
+                        output_audio = gr.Audio(label="Audio đã tạo", interactive=False)
+                        output_text = gr.Textbox(label="Trạng thái", interactive=False)
+                        
+                        with gr.Row():
+                            download_srt = gr.Button("📥 Tải phụ đề (.srt)", visible=False)
+                            clear_btn = gr.Button("🧹 Xóa phụ đề", visible=False)
+                        
+                        subtitles_display = gr.Textbox(
+                            label="Nội dung phụ đề",
+                            interactive=False,
+                            visible=True,
+                            lines=10,
+                            max_lines=20,
+                            elem_classes=["subtitle-box"]
+                        )
+                
+                # Update voice dropdowns
+                char1_language.change(
+                    lambda lang: update_voice_dropdown(lang, "multi", 1),
+                    inputs=char1_language,
+                    outputs=char1_voice
+                )
+                
+                char2_language.change(
+                    lambda lang: update_voice_dropdown(lang, "multi", 2),
+                    inputs=char2_language,
+                    outputs=char2_voice
+                )
+                
+                char3_language.change(
+                    lambda lang: update_voice_dropdown(lang, "multi", 3),
+                    inputs=char3_language,
+                    outputs=char3_voice
+                )
+                
+                submit_btn.click(
+                    multi_processor.process_story,
+                    inputs=[content, output_format,
+                           char1_voice, char2_voice, char3_voice,
+                           char1_rate, char2_rate, char3_rate,
+                           char1_pitch, char2_pitch, char3_pitch,
+                           char1_volume, char2_volume, char3_volume,
+                           repeat_times, pause_between, save_settings],
+                    outputs=[output_audio, download_srt, output_text]
+                )
+                
+                output_audio.change(
+                    lambda audio_output: (
+                        gr.Button(visible=is_valid_audio_path(audio_output)),
+                        gr.Button(visible=is_valid_audio_path(audio_output))
+                    ),
+                    inputs=output_audio,
+                    outputs=[download_srt, clear_btn]
+                ).then(
+                    show_subtitles,
+                    inputs=output_audio,
+                    outputs=subtitles_display
+                )
+                
+                download_srt.click(
+                    lambda audio_path: audio_path.replace('.mp3', '.srt') if audio_path else None,
+                    inputs=output_audio,
+                    outputs=gr.File(label="Tải phụ đề")
+                )
+
+            # ========== TAB 3: Q&A DIALOGUE ==========
+            with gr.Tab("Hỏi & Đáp"):
+                dialogue_processor = DialogueTTSProcessor()
+                settings = dialogue_processor.settings.get("dialogue", {})
+                
+                with gr.Row():
+                    with gr.Column():
+                        content = gr.Textbox(label="Nội dung hội thoại", lines=10, 
+                                           placeholder="Q: Câu hỏi\nA: Câu trả lời\nQ: Câu hỏi tiếp theo\nA: Câu trả lời tiếp theo")
+                        
+                        with gr.Accordion("⚙️ Cài đặt giọng nói", open=True):
+                            with gr.Row():
+                                language_q = gr.Dropdown(
+                                    label="Ngôn ngữ câu hỏi",
+                                    choices=sorted(list(TTSConfig.LANGUAGES.keys())),
+                                    value=settings.get("language_q", "Tiếng Việt")
+                                )
+                                voice_q = gr.Dropdown(
+                                    label="Giọng câu hỏi",
+                                    choices=[v for v in dialogue_processor.voice_map.keys() if v.startswith(settings.get("language_q", "Tiếng Việt"))],
+                                    value=settings.get("voice_q", "Tiếng Việt - HoaiMy (Nữ)")
+                                )
+                            
+                            with gr.Row():
+                                language_a = gr.Dropdown(
+                                    label="Ngôn ngữ câu trả lời",
+                                    choices=sorted(list(TTSConfig.LANGUAGES.keys())),
+                                    value=settings.get("language_a", "Tiếng Việt")
+                                )
+                                voice_a = gr.Dropdown(
+                                    label="Giọng câu trả lời",
+                                    choices=[v for v in dialogue_processor.voice_map.keys() if v.startswith(settings.get("language_a", "Tiếng Việt"))],
+                                    value=settings.get("voice_a", "Tiếng Việt - NamMinh (Nam)")
+                                )
+                        
+                        with gr.Accordion("🔧 Điều chỉnh giọng câu hỏi", open=False):
+                            rate_q = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_q", -20))
+                            pitch_q = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_q", 0))
+                            volume_q = gr.Slider(label="Âm lượng (%)", minimum=80, maximum=110, step=1, value=settings.get("volume_q", 100))
+                        
+                        with gr.Accordion("🔧 Điều chỉnh giọng câu trả lời", open=False):
+                            rate_a = gr.Slider(label="Tốc độ (%)", minimum=-30, maximum=30, step=1, value=settings.get("rate_a", -25))
+                            pitch_a = gr.Slider(label="Cao độ (Hz)", minimum=-30, maximum=30, step=1, value=settings.get("pitch_a", 0))
+                            volume_a = gr.Slider(label="Âm lượng (%)", minimum=80, maximum=110, step=1, value=settings.get("volume_a", 100))
+                        
+                        with gr.Accordion("🔄 Cài đặt lặp lại", open=False):
+                            repeat_times = gr.Slider(label="Số lần lặp", minimum=1, maximum=5, step=1, value=settings.get("repeat_times", 2))
+                            pause_q = gr.Slider(label="Khoảng nghỉ câu hỏi (ms)", minimum=100, maximum=1000, step=50, value=settings.get("pause_q", 200))
+                            pause_a = gr.Slider(label="Khoảng nghỉ câu trả lời (ms)", minimum=100, maximum=2000, step=50, value=settings.get("pause_a", 500))
+                            output_format = gr.Dropdown(label="Định dạng đầu ra", choices=["MP3", "WAV"], value="MP3")
+                            save_settings = gr.Checkbox(label="Lưu cài đặt", value=False)
+                        
+                        submit_btn = gr.Button("🎧 Tạo audio hội thoại", variant="primary")
                     
-                    subtitles_display = gr.Textbox(
-                        label="Nội dung phụ đề",
-                        interactive=False,
-                        visible=True,
-                        lines=10,
-                        max_lines=20,
-                        elem_classes=["subtitle-box"]
-                    )
-            
-            # Update voice dropdowns
-            language_q.change(
-                lambda lang: update_voice_dropdown(lang, "dialogue", "q"),
-                inputs=language_q,
-                outputs=voice_q
-            )
-            
-            language_a.change(
-                lambda lang: update_voice_dropdown(lang, "dialogue", "a"),
-                inputs=language_a,
-                outputs=voice_a
-            )
-            
-            submit_btn.click(
-                dialogue_processor.process_dialogues,
-                inputs=[content, output_format,
-                       language_q, voice_q, rate_q, pitch_q, volume_q,
-                       language_a, voice_a, rate_a, pitch_a, volume_a,
-                       repeat_times, pause_q, pause_a, save_settings],
-                outputs=[output_audio, download_srt, output_text]
-            )
-            
-            output_audio.change(
-                lambda audio_output: (
-                    gr.Button(visible=is_valid_audio_path(audio_output)),
-                    gr.Button(visible=is_valid_audio_path(audio_output))
-                ),
-                inputs=output_audio,
-                outputs=[download_srt, clear_btn]
-            ).then(
-                show_subtitles,
-                inputs=output_audio,
-                outputs=subtitles_display
-            )
-            
-            download_srt.click(
-                lambda audio_path: audio_path.replace('.mp3', '.srt') if audio_path else None,
-                inputs=output_audio,
-                outputs=gr.File(label="Tải phụ đề")
-            )
+                    with gr.Column():
+                        output_audio = gr.Audio(label="Audio đã tạo", interactive=False)
+                        output_text = gr.Textbox(label="Trạng thái", interactive=False)
+                        
+                        with gr.Row():
+                            download_srt = gr.Button("📥 Tải phụ đề (.srt)", visible=False)
+                            clear_btn = gr.Button("🧹 Xóa phụ đề", visible=False)
+                        
+                        subtitles_display = gr.Textbox(
+                            label="Nội dung phụ đề",
+                            interactive=False,
+                            visible=True,
+                            lines=10,
+                            max_lines=20,
+                            elem_classes=["subtitle-box"]
+                        )
+                
+                # Update voice dropdowns
+                language_q.change(
+                    lambda lang: update_voice_dropdown(lang, "dialogue", "q"),
+                    inputs=language_q,
+                    outputs=voice_q
+                )
+                
+                language_a.change(
+                    lambda lang: update_voice_dropdown(lang, "dialogue", "a"),
+                    inputs=language_a,
+                    outputs=voice_a
+                )
+                
+                submit_btn.click(
+                    dialogue_processor.process_dialogues,
+                    inputs=[content, output_format,
+                           language_q, voice_q, rate_q, pitch_q, volume_q,
+                           language_a, voice_a, rate_a, pitch_a, volume_a,
+                           repeat_times, pause_q, pause_a, save_settings],
+                    outputs=[output_audio, download_srt, output_text]
+                )
+                
+                output_audio.change(
+                    lambda audio_output: (
+                        gr.Button(visible=is_valid_audio_path(audio_output)),
+                        gr.Button(visible=is_valid_audio_path(audio_output))
+                    ),
+                    inputs=output_audio,
+                    outputs=[download_srt, clear_btn]
+                ).then(
+                    show_subtitles,
+                    inputs=output_audio,
+                    outputs=subtitles_display
+                )
+                
+                download_srt.click(
+                    lambda audio_path: audio_path.replace('.mp3', '.srt') if audio_path else None,
+                    inputs=output_audio,
+                    outputs=gr.File(label="Tải phụ đề")
+                )
+        
+        return app
+
+# ==================== MAIN ENTRY POINT ====================
+app = create_app()
 
 if __name__ == "__main__":
     import os
     
-    port = int(os.environ.get("PORT", 7860))
+    # Create necessary directories
+    os.makedirs("temp", exist_ok=True)
     
+    port = int(os.environ.get("PORT", 7860))
     app.launch(
         server_name="0.0.0.0",
         server_port=port,
         share=False,
-        show_error=True,
-        prevent_thread_lock=True
+        debug=False,
+        show_error=True
     )
